@@ -1,0 +1,235 @@
+# iShop
+
+A modern e-commerce API built with ASP.NET Core, following Clean Architecture principles. This project provides a RESTful API for managing products in an online store.
+
+## 🏗️ Architecture
+
+This project follows Clean Architecture with three main layers:
+
+- **API**: Presentation layer containing controllers and API configuration
+- **Core**: Domain layer containing business entities and domain logic
+- **Infrastructure**: Data access layer containing database context, migrations, and configurations
+
+## 🛠️ Technology Stack
+
+- **.NET 10.0**
+- **ASP.NET Core Web API**
+- **Entity Framework Core 10.0.3**
+- **SQL Server** (via Docker)
+- **OpenAPI/Swagger** support
+
+## 📋 Prerequisites
+
+Before running this project, ensure you have the following installed:
+
+- [.NET SDK 10.0](https://dotnet.microsoft.com/download)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) (for SQL Server)
+- [SQL Server](https://www.microsoft.com/sql-server/sql-server-downloads) (optional, if not using Docker)
+
+## 🚀 Getting Started
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd iShop
+```
+
+### 2. Start SQL Server with Docker
+
+The project includes a `docker-compose.yml` file for easy database setup:
+
+```bash
+cd Infrastructure
+docker-compose up -d
+```
+
+This will start a SQL Server 2022 container on port 1433 with:
+- **Username**: SA
+- **Password**: Password1!
+- **Database**: skina (will be created automatically)
+
+### 3. Configure Connection String
+
+Update the connection string in `API/appsettings.Development.json`:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost,1433;Database=skina;User Id=SA;Password=Password1!;TrustServerCertificate=True"
+  }
+}
+```
+
+### 4. Run Database Migrations
+
+Navigate to the Infrastructure project and run migrations:
+
+```bash
+cd Infrastructure
+dotnet ef database update --startup-project ../API
+```
+
+### 5. Run the API
+
+Navigate to the API project and run:
+
+```bash
+cd API
+dotnet run
+```
+
+The API will be available at `https://localhost:5001` or `http://localhost:5000` (check `launchSettings.json` for exact ports).
+
+## 📡 API Endpoints
+
+### Products
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/products` | Get all products |
+| GET | `/api/products/{id}` | Get a product by ID |
+| POST | `/api/products` | Create a new product |
+| PUT | `/api/products/{id}` | Update an existing product |
+| DELETE | `/api/products/{id}` | Delete a product |
+
+### Product Model
+
+```json
+{
+  "id": 0,
+  "name": "string",
+  "description": "string",
+  "price": 0.00,
+  "pictureUrl": "string",
+  "type": "string",
+  "brand": "string",
+  "quantityInStock": 0
+}
+```
+
+### Example Requests
+
+**Get all products:**
+```bash
+GET https://localhost:5001/api/products
+```
+
+**Create a product:**
+```bash
+POST https://localhost:5001/api/products
+Content-Type: application/json
+
+{
+  "name": "Laptop",
+  "description": "High-performance laptop",
+  "price": 999.99,
+  "pictureUrl": "https://example.com/laptop.jpg",
+  "type": "Electronics",
+  "brand": "TechBrand",
+  "quantityInStock": 10
+}
+```
+
+**Update a product:**
+```bash
+PUT https://localhost:5001/api/products/1
+Content-Type: application/json
+
+{
+  "id": 1,
+  "name": "Updated Laptop",
+  "description": "Updated description",
+  "price": 899.99,
+  "pictureUrl": "https://example.com/laptop.jpg",
+  "type": "Electronics",
+  "brand": "TechBrand",
+  "quantityInStock": 5
+}
+```
+
+**Delete a product:**
+```bash
+DELETE https://localhost:5001/api/products/1
+```
+
+## 📁 Project Structure
+
+```
+iShop/
+├── API/                          # Presentation layer
+│   ├── Controllers/
+│   │   └── ProductsController.cs # Product CRUD operations
+│   ├── Program.cs                # Application entry point
+│   └── appsettings.json          # Configuration
+├── Core/                         # Domain layer
+│   └── Entities/
+│       ├── BaseEntity.cs         # Base entity with Id
+│       └── Product.cs            # Product entity
+└── Infrastructure/               # Data access layer
+    ├── config/
+    │   └── ProductConfiguration.cs # EF Core configuration
+    ├── Data/
+    │   └── StoreContext.cs       # DbContext
+    ├── Migrations/               # Database migrations
+    └── docker-compose.yml        # SQL Server container setup
+```
+
+## 🔧 Development
+
+### Adding a New Migration
+
+```bash
+cd Infrastructure
+dotnet ef migrations add MigrationName --startup-project ../API
+```
+
+### Updating the Database
+
+```bash
+cd Infrastructure
+dotnet ef database update --startup-project ../API
+```
+
+### Removing the Last Migration
+
+```bash
+cd Infrastructure
+dotnet ef migrations remove --startup-project ../API
+```
+
+## 🧪 Testing
+
+You can test the API endpoints using:
+- **Postman**
+- **Swagger UI** (if enabled in `Program.cs`)
+- **curl** or **HTTPie**
+- **Visual Studio** REST Client
+
+## 📝 Notes
+
+- The project uses Entity Framework Core Code-First approach
+- Database migrations are stored in `Infrastructure/Migrations/`
+- The `BaseEntity` class provides a common `Id` property for all entities
+- Product prices are stored as `decimal(18,2)` in the database
+- The API uses nullable reference types (enabled in project settings)
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 👤 Author
+
+Created as part of .NET development learning journey.
+
+---
+
+**Happy Coding! 🚀**
