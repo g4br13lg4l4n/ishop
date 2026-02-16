@@ -7,8 +7,8 @@ A modern e-commerce API built with ASP.NET Core, following Clean Architecture pr
 This project follows Clean Architecture with three main layers:
 
 - **API**: Presentation layer containing controllers and API configuration
-- **Core**: Domain layer containing business entities and domain logic
-- **Infrastructure**: Data access layer containing database context, migrations, and configurations
+- **Core**: Domain layer containing business entities and interfaces
+- **Infrastructure**: Data access layer containing database context, repositories, migrations, and configurations
 
 ## 🛠️ Technology Stack
 
@@ -163,17 +163,38 @@ iShop/
 │   ├── Program.cs                # Application entry point
 │   └── appsettings.json          # Configuration
 ├── Core/                         # Domain layer
-│   └── Entities/
-│       ├── BaseEntity.cs         # Base entity with Id
-│       └── Product.cs            # Product entity
+│   ├── Entities/
+│   │   ├── BaseEntity.cs         # Base entity with Id
+│   │   └── Product.cs            # Product entity
+│   └── Interfaces/
+│       └── IProductRepository.cs # Repository contract for products
 └── Infrastructure/               # Data access layer
     ├── config/
     │   └── ProductConfiguration.cs # EF Core configuration
     ├── Data/
-    │   └── StoreContext.cs       # DbContext
+    │   ├── StoreContext.cs       # DbContext
+    │   └── ProductRepository.cs  # Repository implementation for products
     ├── Migrations/               # Database migrations
     └── docker-compose.yml        # SQL Server container setup
 ```
+
+## 🧱 Repository Pattern
+
+The products API uses a simple repository abstraction to keep data access concerns out of controllers:
+
+- **Interface**: `Core/Interfaces/IProductRepository.cs`
+  - `Task<IReadOnlyList<Product>> GetProductsAsync()`
+  - `Task<Product?> GetProductByIdAsync(int id)`
+  - `void AddProduct(Product product)`
+  - `void UpdateProduct(Product product)`
+  - `void DeleteProduct(Product product)`
+  - `bool ProductExists(int id)`
+  - `Task<bool> SaveChangesAsync()`
+
+- **Implementation**: `Infrastructure/Data/ProductRepository.cs`
+  - Wraps `StoreContext` and `DbSet<Product>`
+  - Encapsulates EF Core calls (queries, add/update/delete, and `SaveChangesAsync`)
+  - Used by `ProductsController` via constructor injection of `IProductRepository`
 
 ## 🔧 Development
 
@@ -211,6 +232,7 @@ You can test the API endpoints using:
 - The project uses Entity Framework Core Code-First approach
 - Database migrations are stored in `Infrastructure/Migrations/`
 - The `BaseEntity` class provides a common `Id` property for all entities
+- The API uses a repository pattern via `IProductRepository` and `ProductRepository` instead of accessing `StoreContext` directly from controllers
 - Product prices are stored as `decimal(18,2)` in the database
 - The API uses nullable reference types (enabled in project settings)
 
