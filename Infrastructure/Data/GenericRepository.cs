@@ -11,6 +11,11 @@ public class GenericRepository<T>(StoreContext context) : IGenericRepository<T> 
     {
         context.Set<T>().Add(entity);
     }
+    // this is to get the count of entities with the specification
+    public async Task<int> CountAsync(ISpecification<T> spec)
+    {
+        return await ApplySpecification(spec).CountAsync();
+    }
 
     public bool Exists(int id)
     {
@@ -22,9 +27,22 @@ public class GenericRepository<T>(StoreContext context) : IGenericRepository<T> 
         return await context.Set<T>().FindAsync(id);
     }
 
+    // this is to get the entity with the specification
+    public async Task<T?> GetEntityWithSpec(ISpecification<T> spec)
+    {
+        return await ApplySpecification(spec).FirstOrDefaultAsync();
+    }
+
+    // this is to get all the entities
     public async Task<IReadOnlyList<T>> ListAllAsync()
     {
         return await context.Set<T>().ToListAsync();
+    }
+
+    // this is to get the list of entities with the specification
+    public async Task<IReadOnlyList<T>> ListAsync(ISpecification<T> spec)
+    {
+        return await ApplySpecification(spec).ToListAsync();
     }
 
     public void Remove(T entity)
@@ -32,11 +50,13 @@ public class GenericRepository<T>(StoreContext context) : IGenericRepository<T> 
         context.Set<T>().Remove(entity);
     }
 
+    // this is to save all the changes to the database
     public async Task<bool> SaveAllAsync()
     {
         return await context.SaveChangesAsync() > 0;
     }
 
+    // this is to update the entity in the database
     public void Update(T entity)
     {
         // this is to attach the entity to the context
@@ -44,5 +64,11 @@ public class GenericRepository<T>(StoreContext context) : IGenericRepository<T> 
         // this is to set the state of the entity to modified
         // this is to update the entity in the database
         context.Entry(entity).State = EntityState.Modified;
+    }
+
+    // this is to apply the specification to the query
+    private IQueryable<T> ApplySpecification(ISpecification<T> spec)
+    {
+        return SpecificationEvaluator<T>.GetQuery(context.Set<T>().AsQueryable(), spec);
     }
 }
