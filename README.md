@@ -87,8 +87,10 @@ The API will be available at `https://localhost:5001` or `http://localhost:5000`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/products` | Get all products |
+| GET | `/api/products` | Get all products (optional: `?brand=&type=&sort=`) |
 | GET | `/api/products/{id}` | Get a product by ID |
+| GET | `/api/products/brands` | Get distinct brand names (for filters) |
+| GET | `/api/products/types` | Get distinct type names (for filters) |
 | POST | `/api/products` | Create a new product |
 | PUT | `/api/products/{id}` | Update an existing product |
 | DELETE | `/api/products/{id}` | Delete a product |
@@ -234,6 +236,47 @@ High-level request/data flow for the products API:
   2. Changes are tracked by `StoreContext`.  
   3. `SaveAllAsync` calls `context.SaveChangesAsync()`, which persists changes to SQL Server.  
   4. The controller returns `201 Created`, `200 OK`, or appropriate error responses based on the result.
+
+## 📋 Brands and Types Flow
+
+The API exposes **distinct lists of brands and types** from products so clients can build filters (e.g. dropdowns) without loading full product data. Both flows use the same pattern: a **projection specification** (`ISpecification<T, TResult>`) that selects a single column and applies `Distinct`.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/products/brands` | List of distinct product brand names |
+| GET | `/api/products/types`  | List of distinct product type names |
+
+### Flow (brands and types are identical in shape)
+
+1. **Request**  
+   Client calls `GET /api/products/brands` or `GET /api/products/types`.
+
+2. **Controller**  
+   `ProductsController.GetBrands()` or `GetTypes()` creates a **BrandListSpecification** or **TypeListSpecification** (no query parameters) and calls:
+   - `repo.ListAsync(spec)`  
+   where the repository method used is `ListAsync<TResult>(ISpecification<T, TResult> spec)`, with `T = Product` and `TResult = string`.
+
+3. **Specification**  
+   - **BrandListSpecification** extends `BaseSpecification<Product, string>` and in its constructor calls `AddSelect(p => p.Brand)` and `SetIsDistinct()`.  
+   - **TypeListSpecification** extends `BaseSpecification<Product, string>` and calls `AddSelect(p => p.Type)` and `SetIsDistinct()`.  
+   So the spec describes: “from `Product`, select this string property and return distinct values.”
+
+4. **Repository**  
+   `GenericRepository<Product>.ListAsync(spec)` calls `ApplySpecification(spec)`, which uses **SpecificationEvaluator** `GetQuery<T, TResult>`: applies (optional) criteria, ordering, paging, then **projects** with `spec.Select` and applies **Distinct** when `spec.IsDistinct` is true.
+
+5. **Database**  
+   EF Core turns that into a SQL query over the `Products` table that selects only the chosen column and uses `DISTINCT` (e.g. `SELECT DISTINCT Brand FROM Products`), so only unique brands or types are returned.
+
+6. **Response**  
+   The controller receives `IReadOnlyList<string>` and returns it as JSON (e.g. `["Nike", "Adidas", "Puma"]`).
+
+### Summary
+
+- **Brands**: `BrandListSpecification` → select `Product.Brand` → distinct → `GET /api/products/brands` returns `string[]`.  
+- **Types**: `TypeListSpecification` → select `Product.Type` → distinct → `GET /api/products/types` returns `string[]`.  
+- Same pipeline: controller → generic repository `ListAsync<TResult>` → specification evaluator (project + distinct) → SQL → JSON list of strings.
 
 ## 🔧 Development
 
