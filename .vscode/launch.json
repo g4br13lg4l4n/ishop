@@ -27,9 +27,11 @@
             }
         },
         {
-            "name": ".NET Core Attach",
+            "name": ".NET Core Launch (web)",
             "type": "coreclr",
-            "request": "attach"
+            "request": "launch",
+            "program": "${workspaceFolder}/API/bin/Debug/net10.0/API.dll",
+            "cwd": "${workspaceFolder}/API"
         }
     ]
 }
