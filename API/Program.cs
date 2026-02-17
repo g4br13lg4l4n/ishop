@@ -17,6 +17,9 @@ builder.Services.AddDbContext<StoreContext>(opt =>
 // Add the ProductRepository to the container
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 
+// add the GanericRepository to the container
+builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
