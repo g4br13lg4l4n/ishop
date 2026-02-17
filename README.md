@@ -157,44 +157,83 @@ DELETE https://localhost:5001/api/products/1
 
 ```
 iShop/
-├── API/                          # Presentation layer
+├── API/                              # Presentation layer
 │   ├── Controllers/
-│   │   └── ProductsController.cs # Product CRUD operations
-│   ├── Program.cs                # Application entry point
-│   └── appsettings.json          # Configuration
-├── Core/                         # Domain layer
+│   │   └── ProductsController.cs     # Product endpoints (CRUD + filtering)
+│   ├── Program.cs                    # Application bootstrap & DI
+│   └── appsettings.json              # Configuration
+├── Core/                             # Domain layer
 │   ├── Entities/
-│   │   ├── BaseEntity.cs         # Base entity with Id
-│   │   └── Product.cs            # Product entity
-│   └── Interfaces/
-│       └── IProductRepository.cs # Repository contract for products
-└── Infrastructure/               # Data access layer
+│   │   ├── BaseEntity.cs             # Base entity with Id
+│   │   └── Product.cs                # Product entity
+│   ├── Interfaces/
+│   │   ├── IGenericRepository.cs     # Generic repository contract for entities
+│   │   └── ISpecification.cs         # Specification contract for queries
+│   └── Specifications/
+│       ├── BaseSpecification.cs      # Base implementation of ISpecification<T>
+│       └── ProductSpecification.cs   # Product-specific filter/sort specification
+└── Infrastructure/                   # Data access layer
     ├── config/
-    │   └── ProductConfiguration.cs # EF Core configuration
+    │   └── ProductConfiguration.cs   # EF Core configuration
     ├── Data/
-    │   ├── StoreContext.cs       # DbContext
-    │   └── ProductRepository.cs  # Repository implementation for products
-    ├── Migrations/               # Database migrations
-    └── docker-compose.yml        # SQL Server container setup
+    │   ├── StoreContext.cs           # DbContext
+    │   ├── GenericRepository.cs      # Generic repository implementation
+    │   └── SpecificationEvaluator.cs # Applies specifications to EF queries
+    ├── Migrations/                   # Database migrations
+    └── docker-compose.yml            # SQL Server container setup
 ```
 
-## 🧱 Repository Pattern
+## 🧱 Repository & Specification Pattern
 
-The products API uses a simple repository abstraction to keep data access concerns out of controllers:
+The products API uses a **generic repository** combined with the **Specification pattern** to keep data access logic reusable and testable:
 
-- **Interface**: `Core/Interfaces/IProductRepository.cs`
-  - `Task<IReadOnlyList<Product>> GetProductsAsync()`
-  - `Task<Product?> GetProductByIdAsync(int id)`
-  - `void AddProduct(Product product)`
-  - `void UpdateProduct(Product product)`
-  - `void DeleteProduct(Product product)`
-  - `bool ProductExists(int id)`
-  - `Task<bool> SaveChangesAsync()`
+- **Generic repository interface**: `Core/Interfaces/IGenericRepository.cs`
+  - `Task<T?> GetByIdAsync(int id)`
+  - `Task<IReadOnlyList<T>> ListAllAsync()`
+  - `Task<IReadOnlyList<T>> ListAsync(ISpecification<T> spec)`
+  - `Task<T?> GetEntityWithSpec(ISpecification<T> spec)`
+  - `Task<int> CountAsync(ISpecification<T> spec)`
+  - `void Add(T entity)`, `Update(T entity)`, `Remove(T entity)`
+  - `Task<bool> SaveAllAsync()`, `bool Exists(int id)`
 
-- **Implementation**: `Infrastructure/Data/ProductRepository.cs`
-  - Wraps `StoreContext` and `DbSet<Product>`
-  - Encapsulates EF Core calls (queries, add/update/delete, and `SaveChangesAsync`)
-  - Used by `ProductsController` via constructor injection of `IProductRepository`
+- **Specification contract**: `Core/Interfaces/ISpecification.cs`
+  - Exposes `Criteria`, `OrderBy`, `OrderByDescending`, `Includes`, `Skip`, `Take`, and `IsPagingEnabled`
+  - Implemented by `BaseSpecification<T>` and specialized specs like `ProductSpecification`
+
+- **Implementation**: `Infrastructure/Data/GenericRepository.cs`
+  - Wraps `StoreContext` / `DbSet<T>`
+  - Delegates query composition to `SpecificationEvaluator<T>.GetQuery(...)`
+
+- **Specification evaluator**: `Infrastructure/Data/SpecificationEvaluator.cs`
+  - Applies `Criteria`, sorting, and paging from an `ISpecification<T>` to an `IQueryable<T>`
+
+- **Example spec**: `Core/Specifications/ProductSpecification.cs`
+  - Builds a query based on `brand`, `type`, and `sort` (price ascending/descending or name)
+
+`ProductsController` depends on `IGenericRepository<Product>` and passes a `ProductSpecification` to retrieve filtered and sorted products.
+
+## 🔁 Data Flow
+
+High-level request/data flow for the products API:
+
+- **GET `/api/products` (list, filter, sort)**  
+  1. The client calls `/api/products?brand=Nike&type=Shoes&sort=priceAsc`.  
+  2. `ProductsController.GetProducts` creates a `ProductSpecification` with the query parameters.  
+  3. The controller calls `IGenericRepository<Product>.ListAsync(spec)`.  
+  4. `GenericRepository` calls `SpecificationEvaluator<Product>.GetQuery(context.Set<Product>(), spec)` to apply filters, sorting, and paging.  
+  5. EF Core translates the resulting LINQ query to SQL and executes it against SQL Server.  
+  6. The list of `Product` entities is returned to the controller and serialized as JSON in the HTTP response.
+
+- **GET `/api/products/{id}` (details)**  
+  1. Controller calls `repo.GetByIdAsync(id)`.  
+  2. `GenericRepository` uses `context.Set<Product>().FindAsync(id)`.  
+  3. The product (or `null`) is returned and mapped to `200 OK` / `404 NotFound`.
+
+- **POST / PUT / DELETE (write operations)**  
+  1. The controller calls `Add` / `Update` / `Remove` on `IGenericRepository<Product>`.  
+  2. Changes are tracked by `StoreContext`.  
+  3. `SaveAllAsync` calls `context.SaveChangesAsync()`, which persists changes to SQL Server.  
+  4. The controller returns `201 Created`, `200 OK`, or appropriate error responses based on the result.
 
 ## 🔧 Development
 
