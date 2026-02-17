@@ -6,6 +6,7 @@ namespace Core.Specifications;
 // this is the base specification class that all specifications will inherit from
 public class BaseSpecification<T>(Expression<Func<T, bool>> criteria) : ISpecification<T>
 {
+    protected BaseSpecification() : this(null) {}
     // this is the criteria for the specification
     public Expression<Func<T, bool>>? Criteria => criteria;
     // this is the includes for the specification
@@ -21,6 +22,9 @@ public class BaseSpecification<T>(Expression<Func<T, bool>> criteria) : ISpecifi
     // this is the is paging enabled for the specification
     public bool IsPagingEnabled { get; private set; }
 
+    // this is the is distinct for the specification
+    public bool IsDistinct { get; private set; }
+
     protected void AddOrderBy(Expression<Func<T, object>> includeExpression)
     {
         OrderBy = includeExpression;
@@ -30,6 +34,23 @@ public class BaseSpecification<T>(Expression<Func<T, bool>> criteria) : ISpecifi
     {
         OrderByDescending = includeExpression;
     }
-    
-    
+
+    protected void SetIsDistinct()
+    {
+        IsDistinct = true;
+    }
+}
+
+// this is the base specification class that all specifications will inherit from
+public class BaseSpecification<T, TResult>(Expression<Func<T, bool>> criteria) : 
+    BaseSpecification<T>(criteria), ISpecification<T, TResult>
+{
+    protected BaseSpecification() : this(null!) {}
+    // this is the select for the specification
+    public Expression<Func<T, TResult>> Select { get; private set; } = null!;
+    // this is to add the select to the specification
+    protected void AddSelect(Expression<Func<T, TResult>> includeExpression)
+    {
+        Select = includeExpression;
+    }
 }
