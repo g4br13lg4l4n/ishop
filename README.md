@@ -87,7 +87,7 @@ The API will be available at `https://localhost:5001` or `http://localhost:5000`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/products` | Get all products (optional: `?brand=&type=&sort=`) |
+| GET | `/api/products` | Get products with pagination, filters, and sort (see [Pagination](#-pagination)) |
 | GET | `/api/products/{id}` | Get a product by ID |
 | GET | `/api/products/brands` | Get distinct brand names (for filters) |
 | GET | `/api/products/types` | Get distinct type names (for filters) |
@@ -112,10 +112,11 @@ The API will be available at `https://localhost:5001` or `http://localhost:5000`
 
 ### Example Requests
 
-**Get all products:**
+**Get products (paginated, with optional filters/sort):**
 ```bash
-GET https://localhost:5001/api/products
+GET https://localhost:5001/api/products?pageIndex=1&pageSize=6&brands=Nike,Adidas&types=Shoes&sort=priceAsc
 ```
+Response: `{ "pageIndex": 1, "pageSize": 6, "count": 42, "data": [ ... ] }` — see [Pagination](#-pagination).
 
 **Create a product:**
 ```bash
@@ -277,6 +278,137 @@ The API exposes **distinct lists of brands and types** from products so clients 
 - **Brands**: `BrandListSpecification` → select `Product.Brand` → distinct → `GET /api/products/brands` returns `string[]`.  
 - **Types**: `TypeListSpecification` → select `Product.Type` → distinct → `GET /api/products/types` returns `string[]`.  
 - Same pipeline: controller → generic repository `ListAsync<TResult>` → specification evaluator (project + distinct) → SQL → JSON list of strings.
+
+## 📄 Pagination
+
+The products list endpoint uses **server-side pagination**: the API returns one page of items plus the **total count** of items matching the filters, so clients can build page numbers and “next/previous” links.
+
+### Response shape
+
+`GET /api/products` returns a **paged envelope**, not a raw array:
+
+```json
+{
+  "pageIndex": 1,
+  "pageSize": 6,
+  "count": 42,
+  "data": [
+    { "id": 1, "name": "...", "brand": "Nike", "type": "Shoes", ... }
+  ]
+}
+```
+
+| Property   | Type     | Description |
+|-----------|----------|-------------|
+| `pageIndex` | number | Current page (1-based). |
+| `pageSize`  | number | Items per page (capped by API, e.g. max 50). |
+| `count`     | number | **Total** number of items matching the current filters (before paging). Use this to compute total pages: `totalPages = ceil(count / pageSize)`. |
+| `data`      | array  | The items for the current page. |
+
+### Query parameters (how the client requests a page)
+
+Query parameters are bound to `ProductSpecParams` (and optionally to your own params type in other projects):
+
+| Parameter   | Type   | Default | Description |
+|------------|--------|---------|-------------|
+| `pageIndex`| int    | 1       | Page number (1-based). |
+| `pageSize` | int    | 6       | Items per page. Maximum enforced by the API (e.g. 50). |
+| `brands`   | string | -       | Comma-separated brands, e.g. `?brands=Nike,Adidas`. Empty = no brand filter. |
+| `types`    | string | -       | Comma-separated types, e.g. `?types=Shoes,Shirts`. Empty = no type filter. |
+| `sort`     | string | -       | `priceAsc`, `priceDesc`, or default (e.g. name). |
+
+**Example:**  
+`GET /api/products?pageIndex=2&pageSize=10&brands=Nike,Adidas&sort=priceAsc`
+
+### End-to-end workflow
+
+1. **Client**  
+   Calls `GET /api/products?pageIndex=1&pageSize=6&brands=Nike&sort=priceAsc`.
+
+2. **Controller**  
+   - Binds query string to `ProductSpecParams` (e.g. in `GetProducts([FromQuery] ProductSpecParams specParams)`).
+   - Builds a **ProductSpecification** from `specParams` (filters + sort + **paging**).
+   - Calls:
+     - `repo.ListAsync(spec)` → one page of products.
+     - `repo.CountAsync(spec)` → total count of products matching the **same filters** (no Skip/Take).
+   - Wraps the page and metadata in `Pagination<Product>(pageIndex, pageSize, count, data)` and returns it (e.g. `return Ok(pagination)`).
+
+3. **Params / Specification**  
+   - **ProductSpecParams** holds `PageIndex`, `PageSize` (with max cap), and filter/sort fields.
+   - **ProductSpecification** (or your spec) in its constructor:
+     - Sets **criteria** (e.g. brand/type) from params.
+     - Calls **ApplyPaging(skip, take)** where:
+       - `skip = pageSize * (pageIndex - 1)`
+       - `take = pageSize`
+     - Sets **OrderBy** / **OrderByDescending** from `sort`.
+   - That sets on the specification: `Skip`, `Take`, and `IsPagingEnabled = true`.
+
+4. **Repository**  
+   - **ListAsync(spec)**  
+     - Uses **SpecificationEvaluator.GetQuery** to build one query: **Where** (criteria) → **OrderBy** → **Skip(spec.Skip)** → **Take(spec.Take)** → **ToListAsync()**.  
+     - So only the current page is loaded from the DB.
+   - **CountAsync(spec)**  
+     - Builds a query that applies **only the same criteria** (no ordering, no Skip/Take), then **CountAsync()**.  
+     - So the total count matches the filtered set and stays correct for all pages.
+
+5. **Database**  
+   - EF Core turns the list query into SQL with `OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY` (or equivalent), and the count query into `SELECT COUNT(*) ... WHERE ...`.
+
+6. **Response**  
+   - JSON with `pageIndex`, `pageSize`, `count`, and `data` for the current page.
+
+### Files involved (reference)
+
+| Layer        | File / type | Role |
+|-------------|------------|------|
+| API         | `API/RequestHelpers/Pagination.cs` | Response DTO: `PageIndex`, `PageSize`, `Count`, `Data`. |
+| API         | `API/Controllers/ProductsController.cs` | Binds `ProductSpecParams`, creates spec, calls `ListAsync` + `CountAsync`, returns `Pagination<Product>`. |
+| Core        | `Core/Specifications/ProductSpecParams.cs` | Query params: `PageIndex`, `PageSize` (with max), `Brands`, `Types`, `Sort`. |
+| Core        | `Core/Specifications/ProductSpecification.cs` | Builds criteria + sort; calls `ApplyPaging(specParams.PageSize * (specParams.PageIndex - 1), specParams.PageSize)`. |
+| Core        | `Core/Specifications/BaseSpecification.cs` | Holds `Skip`, `Take`, `IsPagingEnabled`; exposes `ApplyPaging(skip, take)`. |
+| Core        | `Core/Interfaces/ISpecification.cs` | Declares `Skip`, `Take`, `IsPagingEnabled`. |
+| Infrastructure | `Infrastructure/Data/GenericRepository.cs` | `ListAsync(spec)` uses evaluator (with Skip/Take); `CountAsync(spec)` uses only criteria (no Skip/Take). |
+| Infrastructure | `Infrastructure/Data/SpecificationEvaluator.cs` | When `IsPagingEnabled`, applies `query.Skip(spec.Skip).Take(spec.Take)`. |
+
+### How to replicate pagination in another project
+
+1. **Response DTO**  
+   Add a generic paged envelope (e.g. `Pagination<T>`) with `PageIndex`, `PageSize`, `Count`, and `Data`.  
+   → Reuse or copy something like `API/RequestHelpers/Pagination.cs`.
+
+2. **Query params**  
+   Define a params class (e.g. `XxxSpecParams`) with at least:
+   - `PageIndex` (default 1),
+   - `PageSize` (default and a max cap in the setter).  
+   Optionally add filter/sort fields.  
+   → Same idea as `Core/Specifications/ProductSpecParams.cs`.
+
+3. **Specification**  
+   - In your `ISpecification<T>`, add `Skip`, `Take`, and `IsPagingEnabled`.  
+   - In `BaseSpecification<T>`, add `ApplyPaging(int skip, int take)` that sets those three.  
+   - In your concrete spec (e.g. `ProductSpecification`), in the constructor compute:
+     - `skip = pageSize * (pageIndex - 1)`,
+     - `take = pageSize`,
+     and call `ApplyPaging(skip, take)`.  
+   → See `BaseSpecification.cs` and `ProductSpecification.cs`.
+
+4. **Evaluator**  
+   In the class that builds `IQueryable<T>` from a specification, when `IsPagingEnabled` is true, apply:
+   - `query = query.Skip(spec.Skip).Take(spec.Take)`  
+   **after** criteria and ordering.  
+   → See `SpecificationEvaluator.GetQuery`.
+
+5. **Repository**  
+   - For the **page**: use the same spec (with paging enabled) in `ListAsync` so the evaluator applies Skip/Take.  
+   - For the **total count**: use a spec that has the **same criteria** but **no paging** (or a separate count query that only applies criteria), then `CountAsync()`.  
+   In this project, `CountAsync` uses only criteria via `ApplyCriteria`, not the full evaluator, so the count is the total matching count.  
+   → See `GenericRepository.ListAsync` and `CountAsync`.
+
+6. **Controller**  
+   In the list action: bind params → create spec from params → call `ListAsync(spec)` and `CountAsync(spec)` → build `Pagination<T>(pageIndex, pageSize, count, data)` → return it.  
+   → See `ProductsController.GetProducts`.
+
+With this, the client can request any page and know the total number of pages from `count` and `pageSize`.
 
 ## 🔧 Development
 
