@@ -1,4 +1,4 @@
-import { Component, EnvironmentInjector, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { HeaderComponent } from './layout/header/header.component';
 import { environment } from '../environments/environment';
@@ -18,8 +18,9 @@ export class AppComponent {
   title = 'iShop';
 
   private http = inject(HttpClient);
+  // signal for the products
+  products = signal<Product[]>([]);
 
-  products: Product[] = [];
 
   ngOnInit() {
     this.http.get<Pagination<Product>>(`${this.baseUrl}/api/products`)
@@ -27,7 +28,7 @@ export class AppComponent {
       return res.data;
     }))
     .subscribe((res: Product[]) => {
-      this.products = res;
+      this.products.set(res);
     })
   }
 }
