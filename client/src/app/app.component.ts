@@ -4,6 +4,8 @@ import { HeaderComponent } from './layout/header/header.component';
 import { environment } from '../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { map } from 'rxjs';
+import { Product } from './shared/models/product';
+import { Pagination } from './shared/models/pagination';
 
 @Component({
   selector: 'app-root',
@@ -20,7 +22,7 @@ export class AppComponent {
   products: Product[] = [];
 
   ngOnInit() {
-    this.http.get<Response>(`${this.baseUrl}/api/products`)
+    this.http.get<Pagination<Product>>(`${this.baseUrl}/api/products`)
     .pipe(map((res) => {
       return res.data;
     }))
@@ -30,21 +32,3 @@ export class AppComponent {
   }
 }
 
-
-interface Response {
-  data: Product[];
-  pageIndex: number;
-  pageSize: number;
-  count: number;
-}
-
-interface Product {
-  id: number;
-  name: string;
-  description: string;
-  price: number;
-  pictureUrl: string;
-  type: string;
-  brand: string;
-  quantityInStock: number;
-}
