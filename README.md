@@ -95,6 +95,19 @@ The API will be available at `https://localhost:5001` or `http://localhost:5000`
 | PUT | `/api/products/{id}` | Update an existing product |
 | DELETE | `/api/products/{id}` | Delete a product |
 
+### Buggy (testing endpoints)
+
+Used to verify error handling and validation behavior. Base path: `/api/buggy`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/buggy/unauthorized` | Returns 401 Unauthorized |
+| GET | `/api/buggy/badrequest` | Returns 400 with a problem details title |
+| GET | `/api/buggy/notfound` | Returns 404 Not Found |
+| GET | `/api/buggy/servererror` | Returns 500 with plain text message |
+| GET | `/api/buggy/internalerror` | Throws an exception (caught by ExceptionMiddleware; returns 500 + ApiErrorResponse) |
+| POST | `/api/buggy/validationerror` | Accepts JSON body; validates against CreateProductDto and returns 400 with validation errors if invalid. Send `Content-Type: application/json` and body e.g. `{}` to trigger validation. |
+
 ### Product Model
 
 ```json
@@ -163,11 +176,18 @@ iShop/
 ├── API/                              # Presentation layer
 │   ├── Controllers/
 │   │   ├── BaseAPIController.cs     # Base controller with ReturnPaginatedResult helper
-│   │   └── ProductsController.cs     # Product endpoints (CRUD, pagination, brands/types)
+│   │   ├── ProductsController.cs   # Product endpoints (CRUD, pagination, brands/types)
+│   │   └── BuggyController.cs      # Test endpoints for errors and validation
+│   ├── DTOs/
+│   │   └── CreateProductDto.cs      # DTO for product creation with validation attributes
+│   ├── errors/
+│   │   └── ApiErrorResponse.cs      # Structured error response (StatusCode, Message, Details)
+│   ├── Middleware/
+│   │   └── ExceptionMiddleware.cs   # Centralized exception handling; returns ApiErrorResponse
 │   ├── RequestHelpers/
 │   │   └── Pagination.cs            # Paged response DTO (PageIndex, PageSize, Count, Data)
-│   ├── Program.cs                    # Application bootstrap & DI
-│   └── appsettings.json              # Configuration
+│   ├── Program.cs                   # Application bootstrap & DI
+│   └── appsettings.json             # Configuration
 ├── Core/                             # Domain layer
 │   ├── Entities/
 │   │   ├── BaseEntity.cs             # Base entity with Id
@@ -221,6 +241,43 @@ The products API uses a **generic repository** combined with the **Specification
   - Builds a query based on `brand`, `type`, and `sort` (price ascending/descending or name)
 
 `ProductsController` inherits from `BaseApiController`, depends on `IGenericRepository<Product>`, and uses `ReturnPaginatedResult` (from the base) to return paginated product lists.
+
+## 🛡️ Error handling and testing
+
+Centralized error handling and test endpoints make it easier to enforce consistent error responses and to verify validation and exception behavior.
+
+### ExceptionMiddleware (centralized error handling)
+
+Unhandled exceptions are caught by **ExceptionMiddleware** so the API always returns JSON instead of HTML error pages.
+
+- **Location**: `API/Middleware/ExceptionMiddleware.cs`
+- **Registration**: In `Program.cs`, `app.UseMiddleware<ExceptionMiddleware>()` is called early in the pipeline (before routing/controllers).
+- **Behavior**:
+  - Wraps the rest of the pipeline in a try/catch.
+  - On exception: sets response to `application/json`, status code **500**, and writes a serialized **ApiErrorResponse**.
+  - **Development**: response includes `StatusCode`, `Message` (exception message), and `Details` (stack trace).
+  - **Production**: response includes `StatusCode` and a generic `Message` (e.g. "Internal Server Error"); `Details` is omitted.
+
+### ApiErrorResponse (structured error payload)
+
+- **Location**: `API/errors/ApiErrorResponse.cs`
+- **Shape**: `StatusCode` (int), `Message` (string), `Details` (optional string, e.g. stack trace in development).
+- **Use**: Returned by ExceptionMiddleware for unhandled exceptions; can be reused elsewhere for consistent error JSON.
+
+### BuggyController (testing HTTP and validation behavior)
+
+- **Location**: `API/Controllers/BuggyController.cs`
+- **Base route**: `/api/buggy` (inherits `api/[controller]` from BaseApiController).
+- **Endpoints**:
+  - **GET** `unauthorized`, `badrequest`, `notfound`, `servererror` — return 401, 400, 404, 500 for testing client handling.
+  - **GET** `internalerror` — throws an exception; tests that ExceptionMiddleware catches it and returns 500 + ApiErrorResponse.
+  - **POST** `validationerror` — accepts a JSON body bound to **CreateProductDto**; if validation fails, the framework returns **400** with standard validation problem details (field errors). Send `Content-Type: application/json` and at least `{}` (or invalid data) to trigger validation; an empty body can result in 415.
+
+### CreateProductDto (input validation)
+
+- **Location**: `API/DTOs/CreateProductDto.cs`
+- **Purpose**: DTO for creating a product; used by BuggyController’s validation endpoint and can be used by product create endpoints.
+- **Validation**: Uses `[Required]` on Name, Description, PictureUrl, Type, Brand; `[Range(0.01, ...)]` on Price; `[Range(0, ...)]` on QuantityInStock. Invalid requests get **400 Bad Request** with an `errors` object listing per-field messages.
 
 ## 🔁 Data Flow
 
