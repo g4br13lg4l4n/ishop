@@ -6,7 +6,7 @@ namespace Core.Specifications;
 // this is the base specification class that all specifications will inherit from
 public class BaseSpecification<T>(Expression<Func<T, bool>> criteria) : ISpecification<T>
 {
-    protected BaseSpecification() : this(null) {}
+    protected BaseSpecification() : this(null!) { }
     // this is the criteria for the specification
     public Expression<Func<T, bool>>? Criteria => criteria;
     // this is the includes for the specification
@@ -38,6 +38,24 @@ public class BaseSpecification<T>(Expression<Func<T, bool>> criteria) : ISpecifi
     protected void SetIsDistinct()
     {
         IsDistinct = true;
+    }
+    
+    protected void ApplyPaging(int skip, int take)
+    {
+        Skip = skip;
+        Take = take;
+        IsPagingEnabled = true;
+    }
+
+    // this is to apply the criteria to the query
+    public IQueryable<T> ApplyCriteria(IQueryable<T> query)
+    {
+        // this is to apply the criteria to the query
+        if (Criteria != null)
+        {
+            query = query.Where(Criteria);
+        }
+        return query;
     }
 }
 

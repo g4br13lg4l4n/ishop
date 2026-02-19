@@ -22,6 +22,7 @@ public interface IGenericRepository<T> where T : BaseEntity
     // this is to get the count of entities with the specification
     Task<IReadOnlyList<TResult>> ListAsync<TResult>(ISpecification<T, TResult> spec);
     
+    // this is to get the count of entities with the specification
     Task<int> CountAsync(ISpecification<T> spec);
 
     void Add(T entity);
