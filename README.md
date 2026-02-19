@@ -162,7 +162,10 @@ DELETE https://localhost:5001/api/products/1
 iShop/
 ├── API/                              # Presentation layer
 │   ├── Controllers/
-│   │   └── ProductsController.cs     # Product endpoints (CRUD + filtering)
+│   │   ├── BaseAPIController.cs     # Base controller with ReturnPaginatedResult helper
+│   │   └── ProductsController.cs     # Product endpoints (CRUD, pagination, brands/types)
+│   ├── RequestHelpers/
+│   │   └── Pagination.cs            # Paged response DTO (PageIndex, PageSize, Count, Data)
 │   ├── Program.cs                    # Application bootstrap & DI
 │   └── appsettings.json              # Configuration
 ├── Core/                             # Domain layer
@@ -171,17 +174,20 @@ iShop/
 │   │   └── Product.cs                # Product entity
 │   ├── Interfaces/
 │   │   ├── IGenericRepository.cs     # Generic repository contract for entities
-│   │   └── ISpecification.cs         # Specification contract for queries
+│   │   └── ISpecification.cs         # Specification contract (incl. ISpecification<T, TResult>)
 │   └── Specifications/
-│       ├── BaseSpecification.cs      # Base implementation of ISpecification<T>
-│       └── ProductSpecification.cs   # Product-specific filter/sort specification
+│       ├── BaseSpecification.cs      # Base implementation of ISpecification<T> (and T, TResult)
+│       ├── ProductSpecParams.cs      # Query params for products (pageIndex, pageSize, brands, types, sort)
+│       ├── ProductSpecification.cs   # Product filter/sort/paging specification
+│       ├── BrandListSpecification.cs # Specification for distinct brands
+│       └── TypeListSpecification.cs  # Specification for distinct types
 └── Infrastructure/                   # Data access layer
     ├── config/
     │   └── ProductConfiguration.cs   # EF Core configuration
     ├── Data/
     │   ├── StoreContext.cs           # DbContext
     │   ├── GenericRepository.cs      # Generic repository implementation
-    │   └── SpecificationEvaluator.cs # Applies specifications to EF queries
+    │   └── SpecificationEvaluator.cs # Applies spec to IQueryable (criteria, order, paging, distinct)
     ├── Migrations/                   # Database migrations
     └── docker-compose.yml            # SQL Server container setup
 ```
@@ -200,32 +206,32 @@ The products API uses a **generic repository** combined with the **Specification
   - `Task<bool> SaveAllAsync()`, `bool Exists(int id)`
 
 - **Specification contract**: `Core/Interfaces/ISpecification.cs`
-  - Exposes `Criteria`, `OrderBy`, `OrderByDescending`, `Includes`, `Skip`, `Take`, and `IsPagingEnabled`
-  - Implemented by `BaseSpecification<T>` and specialized specs like `ProductSpecification`
+  - `ISpecification<T>`: `Criteria`, `OrderBy`, `OrderByDescending`, `Skip`, `Take`, `IsPagingEnabled`, `IsDistinct`, `ApplyCriteria`
+  - `ISpecification<T, TResult>`: adds `Select` for projections (e.g. brands/types)
+  - Implemented by `BaseSpecification<T>` and specialized specs like `ProductSpecification`, `BrandListSpecification`, `TypeListSpecification`
 
 - **Implementation**: `Infrastructure/Data/GenericRepository.cs`
   - Wraps `StoreContext` / `DbSet<T>`
   - Delegates query composition to `SpecificationEvaluator<T>.GetQuery(...)`
 
 - **Specification evaluator**: `Infrastructure/Data/SpecificationEvaluator.cs`
-  - Applies `Criteria`, sorting, and paging from an `ISpecification<T>` to an `IQueryable<T>`
+  - Applies `Criteria` → `OrderBy`/`OrderByDescending` → **paging (Skip/Take once)** → `Distinct` to an `IQueryable<T>`; second overload supports `Select` and `TResult` for projections
 
 - **Example spec**: `Core/Specifications/ProductSpecification.cs`
   - Builds a query based on `brand`, `type`, and `sort` (price ascending/descending or name)
 
-`ProductsController` depends on `IGenericRepository<Product>` and passes a `ProductSpecification` to retrieve filtered and sorted products.
+`ProductsController` inherits from `BaseApiController`, depends on `IGenericRepository<Product>`, and uses `ReturnPaginatedResult` (from the base) to return paginated product lists.
 
 ## 🔁 Data Flow
 
 High-level request/data flow for the products API:
 
-- **GET `/api/products` (list, filter, sort)**  
-  1. The client calls `/api/products?brand=Nike&type=Shoes&sort=priceAsc`.  
-  2. `ProductsController.GetProducts` creates a `ProductSpecification` with the query parameters.  
-  3. The controller calls `IGenericRepository<Product>.ListAsync(spec)`.  
-  4. `GenericRepository` calls `SpecificationEvaluator<Product>.GetQuery(context.Set<Product>(), spec)` to apply filters, sorting, and paging.  
-  5. EF Core translates the resulting LINQ query to SQL and executes it against SQL Server.  
-  6. The list of `Product` entities is returned to the controller and serialized as JSON in the HTTP response.
+- **GET `/api/products` (list, filter, sort, pagination)**  
+  1. The client calls e.g. `/api/products?pageIndex=1&pageSize=6&brands=Nike&sort=priceAsc`.  
+  2. Query params are bound to `ProductSpecParams`; `ProductsController.GetProducts` builds a `ProductSpecification(specParams)` (criteria, sort, and paging).  
+  3. The controller calls `ReturnPaginatedResult(repo, spec, pageIndex, pageSize)`, which runs `ListAsync(spec)` and `CountAsync(spec)`, then returns `Pagination<Product>`.  
+  4. `GenericRepository` uses `SpecificationEvaluator.GetQuery` to apply criteria, ordering, and **Skip/Take once**; `CountAsync` applies only criteria.  
+  5. EF Core translates to SQL; the response is JSON with `pageIndex`, `pageSize`, `count`, and `data`.
 
 - **GET `/api/products/{id}` (details)**  
   1. Controller calls `repo.GetByIdAsync(id)`.  
@@ -326,12 +332,12 @@ Query parameters are bound to `ProductSpecParams` (and optionally to your own pa
    Calls `GET /api/products?pageIndex=1&pageSize=6&brands=Nike&sort=priceAsc`.
 
 2. **Controller**  
-   - Binds query string to `ProductSpecParams` (e.g. in `GetProducts([FromQuery] ProductSpecParams specParams)`).
+   - Binds query string to `ProductSpecParams` in `GetProducts([FromQuery] ProductSpecParams specParams)`.
    - Builds a **ProductSpecification** from `specParams` (filters + sort + **paging**).
-   - Calls:
-     - `repo.ListAsync(spec)` → one page of products.
-     - `repo.CountAsync(spec)` → total count of products matching the **same filters** (no Skip/Take).
-   - Wraps the page and metadata in `Pagination<Product>(pageIndex, pageSize, count, data)` and returns it (e.g. `return Ok(pagination)`).
+   - Calls **ReturnPaginatedResult(repo, spec, specParams.PageIndex, specParams.PageSize)** (from `BaseApiController`), which:
+     - Runs `repo.ListAsync(spec)` → one page of products.
+     - Runs `repo.CountAsync(spec)` → total count matching the **same filters** (no Skip/Take).
+     - Builds `Pagination<Product>(pageIndex, pageSize, count, data)` and returns `Ok(pagination)`.
 
 3. **Params / Specification**  
    - **ProductSpecParams** holds `PageIndex`, `PageSize` (with max cap), and filter/sort fields.
@@ -345,11 +351,11 @@ Query parameters are bound to `ProductSpecParams` (and optionally to your own pa
 
 4. **Repository**  
    - **ListAsync(spec)**  
-     - Uses **SpecificationEvaluator.GetQuery** to build one query: **Where** (criteria) → **OrderBy** → **Skip(spec.Skip)** → **Take(spec.Take)** → **ToListAsync()**.  
-     - So only the current page is loaded from the DB.
+     - Uses **SpecificationEvaluator.GetQuery** to build one query: **Where** (criteria) → **OrderBy** → **Skip(spec.Skip)** → **Take(spec.Take)** (applied **once**) → **ToListAsync()**.  
+     - Only the current page is loaded from the DB.
    - **CountAsync(spec)**  
-     - Builds a query that applies **only the same criteria** (no ordering, no Skip/Take), then **CountAsync()**.  
-     - So the total count matches the filtered set and stays correct for all pages.
+     - Uses only **spec.ApplyCriteria** (no evaluator, no ordering, no Skip/Take), then **CountAsync()**.  
+     - The total count matches the filtered set for all pages.
 
 5. **Database**  
    - EF Core turns the list query into SQL with `OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY` (or equivalent), and the count query into `SELECT COUNT(*) ... WHERE ...`.
@@ -362,13 +368,14 @@ Query parameters are bound to `ProductSpecParams` (and optionally to your own pa
 | Layer        | File / type | Role |
 |-------------|------------|------|
 | API         | `API/RequestHelpers/Pagination.cs` | Response DTO: `PageIndex`, `PageSize`, `Count`, `Data`. |
-| API         | `API/Controllers/ProductsController.cs` | Binds `ProductSpecParams`, creates spec, calls `ListAsync` + `CountAsync`, returns `Pagination<Product>`. |
+| API         | `API/Controllers/BaseAPIController.cs` | Base controller; **ReturnPaginatedResult** runs `ListAsync` + `CountAsync` and returns `Ok(Pagination<T>)`. |
+| API         | `API/Controllers/ProductsController.cs` | Inherits `BaseApiController`; binds `ProductSpecParams`, builds spec, calls `ReturnPaginatedResult`. |
 | Core        | `Core/Specifications/ProductSpecParams.cs` | Query params: `PageIndex`, `PageSize` (with max), `Brands`, `Types`, `Sort`. |
 | Core        | `Core/Specifications/ProductSpecification.cs` | Builds criteria + sort; calls `ApplyPaging(specParams.PageSize * (specParams.PageIndex - 1), specParams.PageSize)`. |
 | Core        | `Core/Specifications/BaseSpecification.cs` | Holds `Skip`, `Take`, `IsPagingEnabled`; exposes `ApplyPaging(skip, take)`. |
 | Core        | `Core/Interfaces/ISpecification.cs` | Declares `Skip`, `Take`, `IsPagingEnabled`. |
-| Infrastructure | `Infrastructure/Data/GenericRepository.cs` | `ListAsync(spec)` uses evaluator (with Skip/Take); `CountAsync(spec)` uses only criteria (no Skip/Take). |
-| Infrastructure | `Infrastructure/Data/SpecificationEvaluator.cs` | When `IsPagingEnabled`, applies `query.Skip(spec.Skip).Take(spec.Take)`. |
+| Infrastructure | `Infrastructure/Data/GenericRepository.cs` | `ListAsync(spec)` uses evaluator (with Skip/Take); `CountAsync(spec)` uses only `ApplyCriteria` (no Skip/Take). |
+| Infrastructure | `Infrastructure/Data/SpecificationEvaluator.cs` | When `IsPagingEnabled`, applies **once** `query.Skip(spec.Skip).Take(spec.Take)` (after criteria and ordering). |
 
 ### How to replicate pagination in another project
 
@@ -393,9 +400,9 @@ Query parameters are bound to `ProductSpecParams` (and optionally to your own pa
    → See `BaseSpecification.cs` and `ProductSpecification.cs`.
 
 4. **Evaluator**  
-   In the class that builds `IQueryable<T>` from a specification, when `IsPagingEnabled` is true, apply:
+   In the class that builds `IQueryable<T>` from a specification, when `IsPagingEnabled` is true, apply **once**:
    - `query = query.Skip(spec.Skip).Take(spec.Take)`  
-   **after** criteria and ordering.  
+   **after** criteria and ordering (and before any distinct/projection). Do not apply Skip/Take more than once or later pages will return empty.  
    → See `SpecificationEvaluator.GetQuery`.
 
 5. **Repository**  
@@ -405,10 +412,10 @@ Query parameters are bound to `ProductSpecParams` (and optionally to your own pa
    → See `GenericRepository.ListAsync` and `CountAsync`.
 
 6. **Controller**  
-   In the list action: bind params → create spec from params → call `ListAsync(spec)` and `CountAsync(spec)` → build `Pagination<T>(pageIndex, pageSize, count, data)` → return it.  
-   → See `ProductsController.GetProducts`.
+   In the list action: bind params → create spec from params → call a helper that runs `ListAsync(spec)` and `CountAsync(spec)` and returns `Ok(Pagination<T>)`.  
+   → See `BaseApiController.ReturnPaginatedResult` and `ProductsController.GetProducts`.
 
-With this, the client can request any page and know the total number of pages from `count` and `pageSize`.
+With this, the client can request any page and know the total number of pages from `count` and `pageSize`. **Important:** the evaluator must apply Skip/Take only once; applying it twice (e.g. in two places in the same pipeline) will make page 2 and beyond return an empty list.
 
 ## 🔧 Development
 
@@ -446,7 +453,7 @@ You can test the API endpoints using:
 - The project uses Entity Framework Core Code-First approach
 - Database migrations are stored in `Infrastructure/Migrations/`
 - The `BaseEntity` class provides a common `Id` property for all entities
-- The API uses a repository pattern via `IProductRepository` and `ProductRepository` instead of accessing `StoreContext` directly from controllers
+- The API uses a generic repository (`IGenericRepository<T>`, `GenericRepository<T>`) and specification pattern instead of accessing `StoreContext` directly from controllers
 - Product prices are stored as `decimal(18,2)` in the database
 - The API uses nullable reference types (enabled in project settings)
 
