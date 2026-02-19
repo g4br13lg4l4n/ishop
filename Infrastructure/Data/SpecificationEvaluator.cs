@@ -83,7 +83,7 @@ public class SpecificationEvaluator<T> where T : BaseEntity
         // this is to apply the distinct to the query
         if (spec.IsDistinct)
         {
-            selectQuery = selectQuery.Distinct();
+            selectQuery = selectQuery?.Distinct();
         }
 
         return selectQuery ?? inputQuery.Cast<TResult>();

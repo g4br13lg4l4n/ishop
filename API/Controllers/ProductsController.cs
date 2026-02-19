@@ -13,10 +13,10 @@ namespace API.Controllers;
 public class ProductsController(IGenericRepository<Product> repo) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<Product>>> GetProducts(string? brand, string? type, string? sort )
+    public async Task<ActionResult<IReadOnlyList<Product>>> GetProducts([FromQuery]ProductSpecParams specParams) // this is to get the query parameters from the url
     {
         // this is to create the specification
-        var spec = new ProductSpecification(brand, type, sort);
+        var spec = new ProductSpecification(specParams);
         // this is to get the products from the repository
         var products = await repo.ListAsync(spec);
         // this is to return the products
