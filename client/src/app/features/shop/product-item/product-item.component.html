@@ -1,4 +1,4 @@
-<mat-card appearance="raised">
+<mat-card appearance="raised" routerLink="/shop/{{ product()?.id }}" class="cursor-pointer hover-card">
     <img mat-card-image [src]="product()?.pictureUrl" [alt]="product()?.name">
     <mat-card-header>
         <mat-card-title>{{ product()?.name?.substring(0, 20) }}...</mat-card-title>

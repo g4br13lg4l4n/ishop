@@ -15,3 +15,9 @@
 .product-item-button mat-icon {
   margin: 0;
 }
+
+.hover-card:hover {
+  box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);
+  transform: scale(1.015);
+  transition: all 0.3s ease;
+}

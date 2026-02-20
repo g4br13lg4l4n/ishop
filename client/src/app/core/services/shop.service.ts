@@ -72,4 +72,12 @@ export class ShopService {
         shareReplay()
       );
   }
+
+  getProduct(id: number) {
+    return this.http.get<Product>(`${this.baseUrl}/api/products/${id}`)
+      .pipe(
+        map((res: Product) => res),
+        shareReplay()
+      );
+  }
 }
