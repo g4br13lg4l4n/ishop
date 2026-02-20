@@ -4,3 +4,10 @@ export interface Pagination<T> {
     pageSize: number;
     count: number;
 }
+
+export class Pagination<T> {
+    data: T[] = [];
+    pageIndex = 0;
+    pageSize = 12;
+    count = 0;
+}

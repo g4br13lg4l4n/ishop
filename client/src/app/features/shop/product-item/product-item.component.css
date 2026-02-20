@@ -1,0 +1,17 @@
+.product-item-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.product-item-button {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.product-item-button mat-icon {
+  margin: 0;
+}

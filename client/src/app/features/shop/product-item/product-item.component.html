@@ -1,0 +1,16 @@
+<mat-card appearance="raised">
+    <img mat-card-image [src]="product()?.pictureUrl" [alt]="product()?.name">
+    <mat-card-header>
+        <mat-card-title>{{ product()?.name?.substring(0, 20) }}...</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+        <p>{{ product()?.description?.substring(0, 90) }}...</p>
+        <p class="text-lg font-bold text-right mt-1">{{ product()?.price | currency }}</p>
+    </mat-card-content>
+    <mat-card-actions class="product-item-actions">
+        <button mat-stroked-button (click)="addToCart(product())" class="w-full">
+            <mat-icon>add_shopping_cart</mat-icon>
+            Add to Cart
+        </button>
+    </mat-card-actions>
+</mat-card>

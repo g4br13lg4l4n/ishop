@@ -1,0 +1,49 @@
+
+<div class="flex flex-row gap-3 mb-4 justify-between align-middle items-center">
+    
+    <div class="flex justify-between">
+        <div class="flex justify-start">
+            <mat-paginator
+                [length]="totalProducts() | async"
+                [pageSize]="shopParams().pageSize"
+                [pageIndex]="shopParams().pageIndex - 1"
+                [showFirstLastButtons]="true"
+                [pageSizeOptions]="[3, 6, 12, 24, 48, 96]"
+                (page)="onPageChange($event)"
+                (pageChange)="onPageChangeNew($event)"
+                >
+            </mat-paginator>
+        </div>
+    </div>
+    <form [formGroup]="searchForm" class="flex w-full min-w-48 max-w-xs">
+        <input
+            type="text"
+            formControlName="search"
+            placeholder="Search"
+            class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm shadow-sm outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+        >
+    </form>
+    <div class="flex flex-row gap-3 justify-end">
+        <div class="flex justify-end">
+            <button mat-stroked-button (click)="openFiltersDialog()"> <mat-icon>filter_list</mat-icon> Filters</button>
+        </div>
+        <div class="flex justify-end">
+            <button mat-stroked-button [matMenuTriggerFor]="sortMenu"> <mat-icon>sort</mat-icon> Sort</button>
+        </div>
+    </div>
+    
+</div>
+
+<div class="grid md:grid-cols-4 md:gap-4 sm:grid-cols-2 sm:gap-2">
+    @for (product of listProducts() | async; track product.id) {
+        <app-product-item [product]="product"></app-product-item>
+    }
+</div>
+
+<mat-menu #sortMenu="matMenu">
+    <mat-selection-list [multiple]="false" (selectionChange)="sortProducts($event)">
+        @for (option of sortOptions(); track option.value) {
+            <mat-list-option [value]="option.value" [selected]="option.value === 'name'">{{ option.name }}</mat-list-option>
+        }
+    </mat-selection-list>
+</mat-menu>
